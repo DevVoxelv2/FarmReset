@@ -1,0 +1,8 @@
+# FarmReset Plugin Konfiguration
+
+# Letzter Reset (wird automatisch gesetzt)
+lastReset: 0
+
+# Zeitzone für Reset (Europe/Berlin)
+timezone: Europe/Berlin
+

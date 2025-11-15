@@ -1,0 +1,28 @@
+name: FarmReset
+version: ${project.version}
+main: de.farmreset.FarmReset
+api-version: '1.21'
+author: FarmReset
+description: Farm Reset Plugin mit monatlichem Reset
+
+commands:
+  farm:
+    description: Farm Reset Verwaltung
+    usage: /farm <pos1|pos2|create|info>
+    permission: farmreset.use
+    permission-message: Du hast keine Berechtigung für diesen Befehl!
+
+permissions:
+  farmreset.*:
+    description: Alle FarmReset Berechtigungen
+    default: op
+    children:
+      farmreset.use: true
+      farmreset.admin: true
+  farmreset.use:
+    description: FarmReset Befehle verwenden
+    default: true
+  farmreset.admin:
+    description: FarmReset Admin Befehle
+    default: op
+
