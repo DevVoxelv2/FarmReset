@@ -3,6 +3,7 @@ package de.farmreset.commands;
 import de.farmreset.FarmReset;
 import de.farmreset.manager.DataManager;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -46,6 +47,9 @@ public class FarmCommand implements CommandExecutor {
                 }
                 handleCreate(player, args[1]);
                 break;
+            case "reset":
+                handleReset(player);
+                break;
             case "info":
                 handleInfo(player);
                 break;
@@ -62,6 +66,7 @@ public class FarmCommand implements CommandExecutor {
         player.sendMessage("§e/farm pos1 §7- Setze Position 1");
         player.sendMessage("§e/farm pos2 §7- Setze Position 2");
         player.sendMessage("§e/farm create <Name> §7- Erstelle Farm mit Name");
+        player.sendMessage("§e/farm reset §7- Setze Farm-Welt zurück (30 Sekunden Countdown)");
         player.sendMessage("§e/farm info §7- Zeige Farm-Informationen");
     }
 
@@ -116,6 +121,32 @@ public class FarmCommand implements CommandExecutor {
             player.sendMessage("  §7Spawn: " + formatLocation(farm.getSpawnLocation()));
             player.sendMessage("  §7Welt: " + farm.getSpawnLocation().getWorld().getName());
         });
+    }
+
+    private void handleReset(Player player) {
+        // Prüfe ob Spieler in einer Farm-Welt ist
+        World playerWorld = player.getWorld();
+        String worldName = playerWorld.getName();
+        
+        // Suche nach einer Farm in dieser Welt
+        var farms = dataManager.getAllFarms();
+        de.farmreset.models.FarmData farmInWorld = null;
+        
+        for (de.farmreset.models.FarmData farm : farms.values()) {
+            if (farm.getSpawnLocation().getWorld().getName().equals(worldName)) {
+                farmInWorld = farm;
+                break;
+            }
+        }
+        
+        if (farmInWorld == null) {
+            player.sendMessage("§cKeine Farm in dieser Welt gefunden!");
+            return;
+        }
+        
+        // Starte Reset mit Countdown
+        plugin.getResetManager().startManualReset(farmInWorld);
+        player.sendMessage("§aFarm Reset gestartet! Die Welt wird in 30 Sekunden zurückgesetzt.");
     }
 
     private String formatLocation(Location loc) {

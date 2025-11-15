@@ -19,6 +19,8 @@ public class ResetManager {
     private final FarmReset plugin;
     private final DataManager dataManager;
     private BukkitTask checkTask;
+    private BukkitTask manualResetTask;
+    private FarmData currentManualReset;
     private static final java.time.ZoneId TIMEZONE = java.time.ZoneId.of("Europe/Berlin");
 
     public ResetManager(FarmReset plugin) {
@@ -187,9 +189,79 @@ public class ResetManager {
         }
     }
 
+    public void startManualReset(FarmData farm) {
+        // Prüfe ob bereits ein Reset läuft
+        if (manualResetTask != null && !manualResetTask.isCancelled()) {
+            plugin.getLogger().warning("Ein manueller Reset läuft bereits!");
+            return;
+        }
+        
+        currentManualReset = farm;
+        World world = farm.getSpawnLocation().getWorld();
+        String worldName = world != null ? world.getName() : null;
+        
+        if (world == null || worldName == null) {
+            plugin.getLogger().warning("Welt für Farm '" + farm.getName() + "' nicht gefunden!");
+            return;
+        }
+        
+        // Sende initiale Nachricht
+        sendMessageToWorld(world, "§c§l=== FARM RESET ===");
+        sendMessageToWorld(world, "§730 Sekunden bis Reset");
+        
+        // Countdown-Werte: 30, 20, 10, 5, 4, 3, 2
+        int[] countdownSeconds = {30, 20, 10, 5, 4, 3, 2};
+        final String finalWorldName = worldName;
+        
+        for (int seconds : countdownSeconds) {
+            final int delay = (30 - seconds) * 20; // Konvertiere Sekunden zu Ticks
+            final int sec = seconds;
+            
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                World w = Bukkit.getWorld(finalWorldName);
+                if (w != null) {
+                    sendMessageToWorld(w, "§c" + sec);
+                }
+            }, delay);
+        }
+        
+        // Führe Reset nach 30 Sekunden durch
+        manualResetTask = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            Logger logger = plugin.getLogger();
+            logger.info("=== Manueller Farm Reset wird durchgeführt ===");
+            
+            World w = Bukkit.getWorld(finalWorldName);
+            if (w != null) {
+                sendMessageToWorld(w, "§c§l=== FARM RESET ===");
+                sendMessageToWorld(w, "§7Die Farm-Welt wird zurückgesetzt...");
+            }
+            
+            resetFarmWorld(farm, logger);
+            
+            logger.info("=== Manueller Farm Reset abgeschlossen ===");
+            World newWorld = Bukkit.getWorld(finalWorldName);
+            if (newWorld != null) {
+                sendMessageToWorld(newWorld, "§aFarm Reset abgeschlossen! Die Welt wurde zurückgesetzt.");
+            }
+            
+            currentManualReset = null;
+            manualResetTask = null;
+        }, 30 * 20); // 30 Sekunden = 600 Ticks
+    }
+    
+    private void sendMessageToWorld(World world, String message) {
+        if (world == null) return;
+        for (Player player : world.getPlayers()) {
+            player.sendMessage(message);
+        }
+    }
+
     public void shutdown() {
         if (checkTask != null && !checkTask.isCancelled()) {
             checkTask.cancel();
+        }
+        if (manualResetTask != null && !manualResetTask.isCancelled()) {
+            manualResetTask.cancel();
         }
     }
 }

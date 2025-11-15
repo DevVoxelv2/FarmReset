@@ -8,7 +8,7 @@ description: Farm Reset Plugin mit monatlichem Reset
 commands:
   farm:
     description: Farm Reset Verwaltung
-    usage: /farm <pos1|pos2|create|info>
+    usage: /farm <pos1|pos2|create|reset|info>
     permission: farmreset.use
     permission-message: Du hast keine Berechtigung für diesen Befehl!
 
