@@ -68,13 +68,17 @@ public class BossbarManager {
 
         // Berechne Progress (0.0 bis 1.0)
         long secondsUntilReset = totalSeconds;
-        long secondsInMonth = getSecondsInCurrentMonth(now);
-        float progress = Math.max(0.0f, Math.min(1.0f, 1.0f - ((float) secondsUntilReset / secondsInMonth)));
+        int intervalDays = plugin.getConfig().getInt("resetIntervalDays", 30);
+        long totalSecondsInInterval = intervalDays * 86400L;
+        float progress = Math.max(0.0f, Math.min(1.0f, 1.0f - ((float) secondsUntilReset / totalSecondsInInterval)));
 
         String timeString = String.format("%d Tage, %02d:%02d:%02d", days, hours, minutes, seconds);
         String dateString = nextReset.format(DATE_FORMATTER);
         
-        Component text = Component.text("§6Farm Reset: §e" + timeString + " §7(" + dateString + " um 00:00 Uhr)");
+        int resetHour = plugin.getConfig().getInt("resetHour", 12);
+        String hourString = String.format("%02d:00", resetHour);
+        
+        Component text = Component.text("§6Farm Reset: §e" + timeString + " §7(" + dateString + " um " + hourString + " Uhr)");
         
         bossBar.name(text);
         bossBar.progress(progress);
@@ -86,30 +90,40 @@ public class BossbarManager {
     }
 
     private ZonedDateTime getNextResetDate(ZonedDateTime now) {
-        // Nächster 1. des Monats
-        int currentDay = now.getDayOfMonth();
-        ZonedDateTime nextReset;
-
-        if (currentDay == 1 && now.getHour() == 0 && now.getMinute() == 0 && now.getSecond() < 5) {
-            // Wir sind gerade am Reset-Tag, nächster Reset ist nächster Monat
-            nextReset = now.plusMonths(1).withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
-        } else if (currentDay == 1) {
-            // Wir sind am 1., aber nicht um Mitternacht - nächster Reset ist nächster Monat
-            nextReset = now.plusMonths(1).withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
-        } else {
-            // Nächster 1. des aktuellen oder nächsten Monats
-            nextReset = now.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
+        // Lese Config-Werte
+        int resetHour = plugin.getConfig().getInt("resetHour", 12);
+        int intervalDays = plugin.getConfig().getInt("resetIntervalDays", 30);
+        long lastResetTimestamp = plugin.getConfig().getLong("lastReset", 0);
+        
+        // Wenn noch kein Reset gemacht wurde, berechne basierend auf jetzt
+        if (lastResetTimestamp == 0) {
+            // Setze nächsten Reset auf heute um die Reset-Stunde
+            ZonedDateTime nextReset = now.withHour(resetHour).withMinute(0).withSecond(0).withNano(0);
+            // Wenn die Stunde bereits vorbei ist, setze auf morgen
             if (nextReset.isBefore(now) || nextReset.isEqual(now)) {
-                nextReset = nextReset.plusMonths(1);
+                nextReset = nextReset.plusDays(1);
             }
+            return nextReset;
         }
-
+        
+        ZonedDateTime lastReset = ZonedDateTime.ofInstant(
+            java.time.Instant.ofEpochSecond(lastResetTimestamp), 
+            TIMEZONE
+        );
+        
+        // Berechne nächsten Reset-Termin: letzter Reset + Intervall-Tage um Reset-Stunde
+        ZonedDateTime nextReset = lastReset.plusDays(intervalDays)
+            .withHour(resetHour)
+            .withMinute(0)
+            .withSecond(0)
+            .withNano(0);
+        
+        // Wenn der nächste Reset in der Vergangenheit liegt, berechne den nächsten
+        while (nextReset.isBefore(now) || nextReset.isEqual(now)) {
+            nextReset = nextReset.plusDays(intervalDays);
+        }
+        
         return nextReset;
-    }
-
-    private long getSecondsInCurrentMonth(ZonedDateTime date) {
-        YearMonth yearMonth = YearMonth.from(date);
-        return yearMonth.lengthOfMonth() * 86400L;
     }
 
     public ZonedDateTime getNextResetDateTime() {

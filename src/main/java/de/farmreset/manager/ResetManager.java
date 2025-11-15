@@ -37,17 +37,49 @@ public class ResetManager {
     private void checkAndReset() {
         ZonedDateTime now = ZonedDateTime.now(TIMEZONE);
         
-        // Prüfe ob heute der 1. des Monats ist und es Mitternacht ist
-        if (now.getDayOfMonth() == 1 && now.getHour() == 0 && now.getMinute() == 0) {
-            // Prüfe ob wir bereits heute einen Reset gemacht haben
-            long lastReset = plugin.getConfig().getLong("lastReset", 0);
-            long today = now.toEpochSecond();
-            
-            // Wenn der letzte Reset nicht heute war, führe Reset durch
-            if (lastReset < today - 3600) { // 1 Stunde Toleranz
-                performReset();
-                plugin.getConfig().set("lastReset", today);
-                plugin.saveConfig();
+        // Lese Config-Werte
+        int resetHour = plugin.getConfig().getInt("resetHour", 12);
+        int intervalDays = plugin.getConfig().getInt("resetIntervalDays", 30);
+        long lastResetTimestamp = plugin.getConfig().getLong("lastReset", 0);
+        
+        // Wenn noch kein Reset gemacht wurde, setze auf jetzt minus Intervall
+        if (lastResetTimestamp == 0) {
+            lastResetTimestamp = now.minusDays(intervalDays).toEpochSecond();
+            plugin.getConfig().set("lastReset", lastResetTimestamp);
+            plugin.saveConfig();
+        }
+        
+        ZonedDateTime lastReset = ZonedDateTime.ofInstant(
+            java.time.Instant.ofEpochSecond(lastResetTimestamp), 
+            TIMEZONE
+        );
+        
+        // Berechne nächsten Reset-Termin: letzter Reset + Intervall-Tage um Reset-Stunde
+        ZonedDateTime nextReset = lastReset.plusDays(intervalDays)
+            .withHour(resetHour)
+            .withMinute(0)
+            .withSecond(0)
+            .withNano(0);
+        
+        // Wenn der nächste Reset in der Vergangenheit liegt, berechne den nächsten gültigen
+        while (nextReset.isBefore(now) || nextReset.isEqual(now)) {
+            nextReset = nextReset.plusDays(intervalDays);
+        }
+        
+        // Prüfe ob jetzt der Reset-Zeitpunkt ist (Stunde und Minute passen)
+        if (now.getHour() == resetHour && now.getMinute() == 0) {
+            // Prüfe ob der berechnete nächste Reset heute ist
+            if (nextReset.toLocalDate().equals(now.toLocalDate())) {
+                // Prüfe ob wir bereits heute einen Reset gemacht haben (Toleranz: 1 Stunde)
+                long today = now.toEpochSecond();
+                long lastResetToday = plugin.getConfig().getLong("lastResetToday", 0);
+                
+                if (lastResetToday < today - 3600) { // 1 Stunde Toleranz
+                    performReset();
+                    plugin.getConfig().set("lastReset", today);
+                    plugin.getConfig().set("lastResetToday", today);
+                    plugin.saveConfig();
+                }
             }
         }
     }

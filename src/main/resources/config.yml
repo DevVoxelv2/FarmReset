@@ -6,3 +6,9 @@ lastReset: 0
 # Zeitzone für Reset (Europe/Berlin)
 timezone: Europe/Berlin
 
+# Reset-Zeit in Stunden (0-23, z.B. 12 für 12:00 Uhr)
+resetHour: 12
+
+# Reset-Intervall in Tagen (z.B. 30 für 1 Monat)
+resetIntervalDays: 30
+
