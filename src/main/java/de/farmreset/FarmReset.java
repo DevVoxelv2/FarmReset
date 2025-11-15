@@ -30,6 +30,9 @@ public class FarmReset extends JavaPlugin {
         bossbarManager = new BossbarManager(this);
         resetManager = new ResetManager(this);
 
+        // Prüfe ob Spawns nach Neustart gesetzt werden müssen
+        resetManager.checkAndSetSpawnsAfterRestart();
+
         // Commands registrieren
         getCommand("farm").setExecutor(new FarmCommand(this));
 

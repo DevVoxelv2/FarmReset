@@ -94,6 +94,7 @@ public class ResetManager {
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.sendMessage("§c§l=== FARM RESET ===");
             player.sendMessage("§7Die Farm-Welt wird zurückgesetzt...");
+            player.sendMessage("§7Der Server wird in 2 Sekunden neugestartet...");
         }
 
         // Hole alle Farmen
@@ -104,20 +105,19 @@ public class ResetManager {
             return;
         }
 
-        // Für jede Farm: World löschen und neu erstellen
+        // Für jede Farm: World löschen und markieren
         for (FarmData farm : farms.values()) {
-            resetFarmWorld(farm, logger);
+            deleteFarmWorld(farm, logger);
         }
 
-        logger.info("=== Farm Reset abgeschlossen ===");
-        
-        // Benachrichtige alle Spieler
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            player.sendMessage("§aFarm Reset abgeschlossen! Die Welt wurde zurückgesetzt.");
-        }
+        // Starte Server-Neustart nach 2 Sekunden
+        logger.info("=== Farm Reset - Server wird neugestartet ===");
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            Bukkit.shutdown();
+        }, 40L); // 2 Sekunden = 40 Ticks
     }
-
-    private void resetFarmWorld(FarmData farm, Logger logger) {
+    
+    private void deleteFarmWorld(FarmData farm, Logger logger) {
         Location spawnLocation = farm.getSpawnLocation();
         World world = spawnLocation.getWorld();
         
@@ -127,7 +127,7 @@ public class ResetManager {
         }
 
         String worldName = world.getName();
-        logger.info("Setze Welt '" + worldName + "' zurück...");
+        logger.info("Lösche Welt '" + worldName + "'...");
 
         // Entferne alle Spieler aus der Welt
         for (Player player : world.getPlayers()) {
@@ -149,28 +149,113 @@ public class ResetManager {
             logger.info("Welt-Ordner '" + worldName + "' gelöscht.");
         }
 
-        // Erstelle die Welt neu
-        WorldCreator creator = new WorldCreator(worldName);
-        World newWorld = Bukkit.createWorld(creator);
+        // Speichere, dass nach dem Neustart der Spawn gesetzt werden muss
+        markFarmForSpawnReset(farm.getName());
+    }
+
+    private void resetFarmWorld(FarmData farm, Logger logger) {
+        // Lösche die Welt
+        deleteFarmWorld(farm, logger);
         
-        if (newWorld != null) {
-            logger.info("Welt '" + worldName + "' neu erstellt.");
-            
-            // Setze den Spawn auf die gespeicherte Position
-            Location savedSpawn = farm.getSpawnLocation();
-            // Da die Welt neu ist, müssen wir die Koordinaten verwenden
-            Location newSpawn = new Location(newWorld, savedSpawn.getX(), savedSpawn.getY(), savedSpawn.getZ(), 
-                                            savedSpawn.getYaw(), savedSpawn.getPitch());
-            // Stelle sicher, dass die Position sicher ist (Y >= 0)
-            if (newSpawn.getY() < 0) {
-                newSpawn.setY(newWorld.getHighestBlockYAt(newSpawn) + 1);
-            }
-            newWorld.setSpawnLocation(newSpawn);
-            logger.info("Spawn für Farm '" + farm.getName() + "' auf Position gesetzt: " + 
-                       String.format("X: %.1f, Y: %.1f, Z: %.1f", newSpawn.getX(), newSpawn.getY(), newSpawn.getZ()));
-        } else {
-            logger.severe("Konnte Welt '" + worldName + "' nicht neu erstellen!");
+        // Starte Server-Neustart nach 2 Sekunden
+        logger.info("Starte Server-Neustart für Farm-Reset...");
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            Bukkit.shutdown();
+        }, 40L); // 2 Sekunden = 40 Ticks
+    }
+    
+    private void markFarmForSpawnReset(String farmName) {
+        java.util.List<String> farmsToReset = plugin.getConfig().getStringList("farmsToSetSpawnAfterRestart");
+        if (!farmsToReset.contains(farmName)) {
+            farmsToReset.add(farmName);
+            plugin.getConfig().set("farmsToSetSpawnAfterRestart", farmsToReset);
+            plugin.saveConfig();
         }
+    }
+    
+    public void checkAndSetSpawnsAfterRestart() {
+        java.util.List<String> farmsToReset = new java.util.ArrayList<>(plugin.getConfig().getStringList("farmsToSetSpawnAfterRestart"));
+        
+        if (farmsToReset.isEmpty()) {
+            return;
+        }
+        
+        Logger logger = plugin.getLogger();
+        logger.info("Prüfe ob Spawns nach Neustart gesetzt werden müssen...");
+        
+        java.util.List<String> processedFarms = new java.util.ArrayList<>();
+        
+        for (String farmName : farmsToReset) {
+            FarmData farm = dataManager.getFarm(farmName);
+            if (farm == null) {
+                logger.warning("Farm '" + farmName + "' nicht gefunden, entferne aus Reset-Liste!");
+                processedFarms.add(farmName);
+                continue;
+            }
+            
+            String worldName = farm.getSpawnLocation().getWorld().getName();
+            World world = Bukkit.getWorld(worldName);
+            
+            if (world == null) {
+                logger.info("Welt '" + worldName + "' für Farm '" + farmName + "' noch nicht geladen. Erstelle sie...");
+                // Erstelle die Welt, falls sie nicht existiert
+                WorldCreator creator = new WorldCreator(worldName);
+                world = Bukkit.createWorld(creator);
+                
+                if (world == null) {
+                    logger.warning("Konnte Welt '" + worldName + "' nicht erstellen. Versuche es später erneut...");
+                    // Warte 5 Sekunden und versuche es erneut
+                    final String finalFarmName = farmName;
+                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                        setSpawnForFarm(farm);
+                        java.util.List<String> remainingFarms = new java.util.ArrayList<>(plugin.getConfig().getStringList("farmsToSetSpawnAfterRestart"));
+                        remainingFarms.remove(finalFarmName);
+                        plugin.getConfig().set("farmsToSetSpawnAfterRestart", remainingFarms);
+                        plugin.saveConfig();
+                    }, 100L); // 5 Sekunden = 100 Ticks
+                    continue;
+                }
+            }
+            
+            setSpawnForFarm(farm);
+            processedFarms.add(farmName);
+        }
+        
+        // Entferne alle behandelten Farmen aus der Liste
+        farmsToReset.removeAll(processedFarms);
+        plugin.getConfig().set("farmsToSetSpawnAfterRestart", farmsToReset);
+        plugin.saveConfig();
+        
+        if (!farmsToReset.isEmpty()) {
+            logger.info("Es wurden " + farmsToReset.size() + " Farm(en) für Spawn-Reset markiert (werden später gesetzt).");
+        } else {
+            logger.info("Alle Spawns wurden erfolgreich gesetzt!");
+        }
+    }
+    
+    private void setSpawnForFarm(FarmData farm) {
+        Logger logger = plugin.getLogger();
+        String worldName = farm.getSpawnLocation().getWorld().getName();
+        World world = Bukkit.getWorld(worldName);
+        
+        if (world == null) {
+            logger.warning("Welt '" + worldName + "' für Farm '" + farm.getName() + "' nicht gefunden!");
+            return;
+        }
+        
+        // Setze den Spawn auf die gespeicherte Position
+        Location savedSpawn = farm.getSpawnLocation();
+        Location newSpawn = new Location(world, savedSpawn.getX(), savedSpawn.getY(), savedSpawn.getZ(), 
+                                        savedSpawn.getYaw(), savedSpawn.getPitch());
+        
+        // Stelle sicher, dass die Position sicher ist (Y >= 0)
+        if (newSpawn.getY() < 0) {
+            newSpawn.setY(world.getHighestBlockYAt(newSpawn) + 1);
+        }
+        
+        world.setSpawnLocation(newSpawn);
+        logger.info("Spawn für Farm '" + farm.getName() + "' auf Position gesetzt: " + 
+                   String.format("X: %.1f, Y: %.1f, Z: %.1f", newSpawn.getX(), newSpawn.getY(), newSpawn.getZ()));
     }
 
     private void deleteDirectory(File directory) {
@@ -239,15 +324,10 @@ public class ResetManager {
             if (w != null) {
                 sendMessageToWorld(w, "§c§l=== FARM RESET ===");
                 sendMessageToWorld(w, "§7Die Farm-Welt wird zurückgesetzt...");
+                sendMessageToWorld(w, "§7Der Server wird in 2 Sekunden neugestartet...");
             }
             
             resetFarmWorld(farm, logger);
-            
-            logger.info("=== Manueller Farm Reset abgeschlossen ===");
-            World newWorld = Bukkit.getWorld(finalWorldName);
-            if (newWorld != null) {
-                sendMessageToWorld(newWorld, "§aFarm Reset abgeschlossen! Die Welt wurde zurückgesetzt.");
-            }
             
             currentManualReset = null;
             manualResetTask = null;
