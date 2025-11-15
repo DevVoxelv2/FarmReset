@@ -210,7 +210,7 @@ public class ResetManager {
         sendMessageToWorld(world, "§730 Sekunden bis Reset");
         
         // Countdown-Werte: 30, 20, 10, 5, 4, 3, 2
-        int[] countdownSeconds = {30, 20, 10, 5, 4, 3, 2};
+        int[] countdownSeconds = {30, 20, 10, 5, 4, 3, 2, 1};
         final String finalWorldName = worldName;
         
         for (int seconds : countdownSeconds) {
@@ -220,7 +220,12 @@ public class ResetManager {
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 World w = Bukkit.getWorld(finalWorldName);
                 if (w != null) {
-                    sendMessageToWorld(w, "§c" + sec);
+                    if (sec == 3) {
+                        // Bei 3 Sekunden alle Spieler kicken
+                        kickAllPlayersFromWorld(w, "§cFarmReset\n§7Versuche es in 1 Minute wieder");
+                    } else {
+                        sendMessageToWorld(w, "§c" + sec);
+                    }
                 }
             }, delay);
         }
@@ -253,6 +258,26 @@ public class ResetManager {
         if (world == null) return;
         for (Player player : world.getPlayers()) {
             player.sendMessage(message);
+        }
+    }
+    
+    private void kickAllPlayersFromWorld(World world, String reason) {
+        if (world == null) return;
+        
+        // Finde eine Standard-Welt zum Teleportieren
+        World defaultWorld = Bukkit.getWorlds().get(0);
+        Location defaultSpawn = defaultWorld != null ? defaultWorld.getSpawnLocation() : null;
+        
+        // Kopiere die Spieler-Liste, da wir während der Iteration kicken
+        java.util.List<Player> players = new java.util.ArrayList<>(world.getPlayers());
+        
+        for (Player player : players) {
+            // Teleportiere zu Standard-Welt falls möglich
+            if (defaultWorld != null && !defaultWorld.equals(world) && defaultSpawn != null) {
+                player.teleport(defaultSpawn);
+            }
+            // Kicke den Spieler
+            player.kickPlayer(reason);
         }
     }
 
